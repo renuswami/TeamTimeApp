@@ -5,9 +5,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.location.Location
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -22,6 +22,9 @@ import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import com.example.teamtime.uicompose.MyApp
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import java.io.OutputStream
 import java.net.HttpURLConnection
@@ -29,15 +32,18 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var permissionRequest: ActivityResultLauncher<String>
-
-    // Office static location (example)
-    private val officeLatitude = 26.8973681  // Office Latitude
-    private val officeLongitude = 75.7559878 // Office Longitude
+    private val radiusInMeters = 50.0 // 50 meters radius
+    val officeLatitude = 26.8973744
+    val officeLongitude = 75.7559854
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,32 +75,35 @@ class MainActivity : ComponentActivity() {
                 },
                 onRequestLocation = {
                     if (isLocationEnabled()) {
-                        fetchLocationAndCheckInOut(
+                        fetchLocationAndInfo(
                             onSuccess = { androidId, latitude, longitude, time ->
-                                Toast.makeText(
-                                    this,
-                                    "Done :)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                // Send data to Google Sheets after success
-                                sendDataToGoogleSheets(androidId, latitude, longitude, time)
-                            },
-                            onError = {
-                                dialogTitle = "Error Fetching Location"
-                                dialogMessage = "Unable to fetch location. Please try again."
-                                onDismissAction = {}
-                                showDialog = true
+                                if (isWithinRadius(latitude, longitude)) {
+                                    // Allow Check-in or Check-out
+                                    sendDataToGoogleSheets(androidId, latitude, longitude, time)
+                                    Toast.makeText(
+                                        this,
+                                        "Check-in/Check-out successful!",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    // Outside radius, show Toast
+                                    Toast.makeText(
+                                        this,
+                                        "You are not within the required 50-meter radius of the office.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             },
                             onRedirect = {
                                 dialogTitle = "Location Services Disabled"
-                                dialogMessage = "Please enable location services to proceed."
+                                dialogMessage = "Please enable location services to proceed..."
                                 onDismissAction = { redirectToLocationSettings() }
                                 showDialog = true
                             }
                         )
                     } else {
                         dialogTitle = "Location Services Disabled"
-                        dialogMessage = "Please enable location services to proceed."
+                        dialogMessage = "Please enable location services to proceed..."
                         onDismissAction = { redirectToLocationSettings() }
                         showDialog = true
                     }
@@ -103,74 +112,52 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Method to calculate the distance between the current location and the office location
-    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val R = 6371 // Radius of the Earth in kilometers
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-        return R * c * 1000 // Distance in meters
-    }
-
-    // Method to check if the user is within 100 meters of the office location
-    private fun checkInOrCheckOut(latitude: Double, longitude: Double): Boolean {
-        // Calculate distance to office
-        val distance = calculateDistance(latitude, longitude, officeLatitude, officeLongitude)
-
-        return distance <= 5 // Return true if within 100 meters
-    }
-
     private fun isLocationEnabled(): Boolean {
         val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
                 locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
     }
 
-    @SuppressLint("MissingPermission", "HardwareIds")
-    private fun fetchLocationAndCheckInOut(
+    @SuppressLint("MissingPermission")
+    private fun fetchLocationAndInfo(
         onSuccess: (androidId: String, latitude: Double, longitude: Double, time: String) -> Unit,
-        onError: () -> Unit,
         onRedirect: () -> Unit
     ) {
         if (hasLocationPermission()) {
-            fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-                if (location != null) {
-                    val androidId = android.provider.Settings.Secure.getString(
-                        contentResolver,
-                        android.provider.Settings.Secure.ANDROID_ID
-                    )
-                    val latitude = location.latitude
-                    val longitude = location.longitude
-                    val currentTime =
-                        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+            val locationRequest = LocationRequest.create().apply {
+                interval = 10000
+                fastestInterval = 5000
+                priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+            }
 
-                    Log.d("LocationInfo", "Android ID: $androidId")
-                    Log.d("LocationInfo", "Latitude: $latitude")
-                    Log.d("LocationInfo", "Longitude: $longitude")
-                    Log.d("LocationInfo", "Time: $currentTime")
+            val locationCallback = object : LocationCallback() {
+                @SuppressLint("HardwareIds")
+                override fun onLocationResult(locationResult: LocationResult) {
+                    val location = locationResult.locations[0]
+                    if (location != null) {
+                        val androidId = Settings.Secure.getString(
+                            contentResolver,
+                            Settings.Secure.ANDROID_ID
+                        )
+                        val latitude = location.latitude
+                        val longitude = location.longitude
+                        val currentTime = SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss",
+                            Locale.getDefault()
+                        ).format(Date())
 
-                    // Check if user is within 100 meters of the office
-                    if (checkInOrCheckOut(latitude, longitude)) {
-                        // Proceed with sending data if within range
+                        fusedLocationClient.removeLocationUpdates(this)
                         onSuccess(androidId, latitude, longitude, currentTime)
                     } else {
-                        // Notify user they are outside the 100-meter range
-                        Toast.makeText(this, "You are not within 100 meters of the office.", Toast.LENGTH_SHORT).show()
-                        onError()
+                        onRedirect()
                     }
-                } else {
-                    Log.e("LocationError", "Location is null, redirecting to location settings.")
-                    onRedirect()
                 }
-            }.addOnFailureListener { exception ->
-                Log.e("LocationError", "Location fetch failed: ${exception.message}")
-                onRedirect()
             }
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback,
+                Looper.getMainLooper()
+            )
         } else {
             requestLocationPermission()
         }
@@ -180,6 +167,9 @@ class MainActivity : ComponentActivity() {
         return ActivityCompat.checkSelfPermission(
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -192,14 +182,35 @@ class MainActivity : ComponentActivity() {
             val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
             startActivity(intent)
         } catch (e: Exception) {
-            Log.e("LocationRedirect", "Error while redirecting to location settings: ${e.message}")
+            Log.e("LocationRedirect", "Error redirecting to location settings: ${e.message}")
         }
     }
 
-    private fun sendDataToGoogleSheets(androidId: String, latitude: Double, longitude: Double, time: String) {
+    private fun isWithinRadius(latitude: Double, longitude: Double): Boolean {
+        val distance = calculateDistance(officeLatitude, officeLongitude, latitude, longitude)
+        return distance <= radiusInMeters
+    }
+
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val R = 6371 // Radius of Earth in kilometers
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return R * c * 1000 // Distance in meters
+    }
+
+    private fun sendDataToGoogleSheets(
+        androidId: String,
+        latitude: Double,
+        longitude: Double,
+        time: String
+    ) {
         Thread {
             try {
-                val url = URL("https://script.google.com/macros/s/AKfycbwtRixMSTS07ZDTh7vkQ9NABFo6LUMDZbMMVdeQg9EpfSDbJQLyZOpIBOJ-oT8dNuzgcA/exec")
+                val url = URL("YOUR_GOOGLE_SHEETS_URL")
                 val postData = "androidId=$androidId&latitude=$latitude&longitude=$longitude&time=$time"
 
                 val connection = url.openConnection() as HttpURLConnection
@@ -207,20 +218,17 @@ class MainActivity : ComponentActivity() {
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 connection.doOutput = true
 
-                // Write data to the output stream
                 val outputStream: OutputStream = connection.outputStream
                 outputStream.write(postData.toByteArray())
                 outputStream.flush()
 
                 val responseCode = connection.responseCode
-                /*if (responseCode == HttpURLConnection.HTTP_OK) {
+
+                if (responseCode == HttpURLConnection.HTTP_OK) {
                     Log.d("GoogleSheets", "Data sent successfully.")
-                    runOnUiThread {
-                        Toast.makeText(this, "Data sent successfully to Google Sheets.", Toast.LENGTH_SHORT).show()
-                    }
                 } else {
                     Log.e("GoogleSheets", "Failed to send data. Response Code: $responseCode")
-                }*/
+                }
 
                 connection.disconnect()
             } catch (e: Exception) {

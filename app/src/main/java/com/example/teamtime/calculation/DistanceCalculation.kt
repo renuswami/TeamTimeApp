@@ -1,4 +1,4 @@
-// Method to calculate the distance between the current location and the office location
+// Method to calculate the distance between two points (Haversine formula)
 private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
     val R = 6371 // Radius of the Earth in kilometers
     val dLat = Math.toRadians(lat2 - lat1)
