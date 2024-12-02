@@ -26,7 +26,6 @@ import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
-import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -211,21 +210,22 @@ class MainActivity : ComponentActivity() {
         Thread {
             try {
                 val url = URL("https://script.google.com/macros/s/AKfycbwtRixMSTS07ZDTh7vkQ9NABFo6LUMDZbMMVdeQg9EpfSDbJQLyZOpIBOJ-oT8dNuzgcA/exec")
-                val postData = "androidId=$androidId&latitude=$latitude&longitude=$longitude&time=$time"
+                val postData =
+                    "androidId=$androidId&latitude=$latitude&longitude=$longitude&time=$time"
 
                 val connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                 connection.doOutput = true
 
-                val outputStream: OutputStream = connection.outputStream
-                outputStream.write(postData.toByteArray())
-                outputStream.flush()
+                // Write data to the request
+                connection.outputStream.use { it.write(postData.toByteArray()) }
 
                 val responseCode = connection.responseCode
+                val responseMessage = connection.inputStream.bufferedReader().use { it.readText() }
 
                 if (responseCode == HttpURLConnection.HTTP_OK) {
-                    Log.d("GoogleSheets", "Data sent successfully.")
+                    Log.d("GoogleSheets", "Data sent successfully: $responseMessage")
                 } else {
                     Log.e("GoogleSheets", "Failed to send data. Response Code: $responseCode")
                 }
