@@ -210,7 +210,7 @@ class MainActivity : ComponentActivity() {
     ) {
         Thread {
             try {
-                val url = URL("YOUR_GOOGLE_SHEETS_URL")
+                val url = URL("https://script.google.com/macros/s/AKfycbwtRixMSTS07ZDTh7vkQ9NABFo6LUMDZbMMVdeQg9EpfSDbJQLyZOpIBOJ-oT8dNuzgcA/exec")
                 val postData = "androidId=$androidId&latitude=$latitude&longitude=$longitude&time=$time"
 
                 val connection = url.openConnection() as HttpURLConnection
