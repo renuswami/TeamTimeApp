@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
                                     sendDataToGoogleSheets(androidId, latitude, longitude, time)
                                     Toast.makeText(
                                         this,
-                                        "Check-in/Check-out successful!",
+                                        "Done :)",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 } else {
