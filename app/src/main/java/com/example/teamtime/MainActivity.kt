@@ -35,6 +35,8 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import com.google.firebase.firestore.FirebaseFirestore
+
 
 class MainActivity : ComponentActivity() {
 
@@ -77,7 +79,14 @@ class MainActivity : ComponentActivity() {
                         fetchLocationAndInfo(
                             onSuccess = { androidId, latitude, longitude, time ->
                                 if (isWithinRadius(latitude, longitude)) {
-                                    // Allow Check-in or Check-out
+
+                                    /*sendDataToFirebase(
+                                        androidId = "7f2603d73763c100",
+                                        latitude = 37.4219983,
+                                        longitude = -122.084,
+                                        time = "12/3/2024 14:12:09"
+                                    )*/
+                                    sendDataToFirebase(androidId, latitude, longitude, time)
                                     sendDataToGoogleSheets(androidId, latitude, longitude, time)
                                     Toast.makeText(
                                         this,
@@ -236,4 +245,33 @@ class MainActivity : ComponentActivity() {
             }
         }.start()
     }
+}
+
+
+private fun sendDataToFirebase(
+    androidId: String,
+    latitude: Double,
+    longitude: Double,
+    time: String
+) {
+    // Initialize the Firestore reference
+    val firestore = FirebaseFirestore.getInstance()
+
+    // Data to be stored
+    val data = hashMapOf(
+        "androidId" to androidId,
+        "latitude" to latitude,
+        "longitude" to longitude,
+        "time" to time
+    )
+
+    // Add data to the "employees" collection
+    firestore.collection("employees")
+        .add(data)
+        .addOnSuccessListener { documentReference ->
+            println("Data successfully written with ID: ${documentReference.id}")
+        }
+        .addOnFailureListener { error ->
+            println("Failed to write data to Firebase Firestore: ${error.message}")
+        }
 }
