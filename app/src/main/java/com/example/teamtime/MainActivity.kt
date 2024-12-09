@@ -46,8 +46,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var permissionRequest: ActivityResultLauncher<String>
     private val radiusInMeters = 50.0 // 50 meters radius
-    val officeLatitude = 26.8973744
-    val officeLongitude = 75.7559854
+    private val officeLatitude = 26.8973744
+    private val officeLongitude = 75.7559854
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,6 +83,8 @@ class MainActivity : ComponentActivity() {
                             onSuccess = { androidId, latitude, longitude, time ->
                                 if (isWithinRadius(latitude, longitude)) {
 
+                                    //checkAndUpdateData("30a01419478b8bf4", 26.897367, 75.7559097, "2024-12-07 15:10:12")
+                                    //sendDataToGoogleSheets("30a01419478b8bf4", 26.897367, 75.7559097, "2024-12-07 12:14:12")
                                     checkAndUpdateData(androidId, latitude, longitude, time)
                                     sendDataToGoogleSheets(androidId, latitude, longitude, time)
                                     Toast.makeText(
